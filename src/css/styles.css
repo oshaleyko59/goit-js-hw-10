@@ -11,7 +11,7 @@ body {
   color: #212121;
   line-height: 1.5;
 }
-
+/* Додай мінімальне оформлення елементів інтерфейсу. */
 #search-box {
   font: inherit;
   padding: 8px 20px;
