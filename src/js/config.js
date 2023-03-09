@@ -8,7 +8,7 @@
 */
 
 export const CONF = {
-  DEBOUNCE_DELAY: 30, //TODO:
+  DEBOUNCE_DELAY: 300, 
   MAX_NUMBER_COUNTRIES: 10,
   PLACEHOLDER: 'Please input country name here',
 
