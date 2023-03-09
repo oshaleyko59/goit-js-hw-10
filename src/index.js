@@ -1,32 +1,34 @@
 import './css/styles.css';
 
-import { Notify } from 'notiflix/build/notiflix-notify-aio';
 import debounce from 'lodash.debounce';
 
 //function fetchCountries() shall be imported from  fetchCountries.js
 import { fetchCountries } from './js/fetchCountries';
+import * as show from './js/notifications';
 
 /******
 Створи фронтенд частину програми пошуку даних про країну за її частковою
 або повною назвою */
 
-const DEBOUNCE_DELAY = 300; //Too fast actually...
+const DEBOUNCE_DELAY = 30; //Too fast actually...
 const MAX_NUMBER_COUNTRIES = 10;
 
 // configuration object for modification of output appearance
 const CONF = {
   useCommon: false, //use common name for a header if true, official name by default
+  filterStrict: false, //if true, fetched data will be filtered out if not start from entered letters
+  getInfoStr() {
+  return `ALT+SHIFT-F - toggle filter, ALT+SHIFT-N - toggle name. Name option: ${
+    CONF.useCommon ? 'COMMON' : 'OFFICIAL'
+  } Filter option: ${CONF.filterStrict ? 'YES' : 'NO'}`;
+}
 };
-const USE_OFFICIAL = 'Alt-click on input element to revert to OFFICIAL name';
-const USE_COMMON = 'Alt-click on input element to see country COMMON name';
 
 /* INTERFACE
 + if response > 10 - show warning notiflix
 + if response = 2 - render list(only flag and name official)
 + if response = 1 - render country card (flag, name official, capital, population and languages)
 */
-const WARN_TOO_MANY_COUNTRIES =
-  'Too many matches found. Please enter a more specific name.';
 
 const refs = {
   // input#search-box for kbd input
@@ -35,72 +37,122 @@ const refs = {
   countryInfo: document.querySelector('.country-info'),
 };
 
+refs.input.placeholder = 'Please input country name here';
 refs.countries.classList.add('invisible');
 refs.countryInfo.classList.add('invisible');
-  // HTTP-запити виконуються на події input
+// HTTP-запити виконуються на події input
 refs.input.addEventListener(
   'input',
   // use lodash.debounce with 300 ms delay
   debounce(e => processInput(e.target.value), DEBOUNCE_DELAY)
 );
 
-//to allow change appearance - use of name fields - by Ctrl-click
-refs.input.addEventListener('click', handleInputClick);
-informOfUseCommon(USE_COMMON);
+/* to toggle appearance:
+  ALT-N - name.common vs name.official
+  ALT-F - toggle no filter vs filter
+    Filter out if fetched name(any) does not start with entered sequenc
+ */
+document.addEventListener('keydown', handleKeyDown);
+show.init();
+show.setDefault(CONF.getInfoStr());
+/*   `ALT+SHIFT-F - toggle filter, ALT+SHIFT-N - toggle name. Name option: ${
+    CONF.useCommon ? 'COMMON' : 'OFFICIAL'
+  } Filter option: ${CONF.filterStrict ? 'YES' : 'NO'}`
+); */
+show.default();
+processInput('grou');
+//************************* end of sync code *********************
 
 /* ************************* FUNCTIONS ********************************** */
-function processInput(name) {
-  clearOutput();
 
+function processInput(name) {
   name = name.trim().toLowerCase();
   if (name === '') {
+    refs.input.value = '';
+    refs.input.placeholder = 'Please enter country name';
+    show.default();
     return;
   }
 
   fetchCountries(name)
     .then(data => {
+      if (CONF.filterStrict) {
+        data = data.filter(
+          el =>
+            el.name.common.toLowerCase().startsWith(name) ||
+            el.name.official.toLowerCase().startsWith(name)
+        );
+      }
       if (data.length === 1) {
+        console.log(data[0]);
+        refs.countries.classList.add('invisible');
+
         renderCountry(data[0]);
       } else if (data.length <= MAX_NUMBER_COUNTRIES) {
+        console.log(data);
+        refs.countryInfo.classList.add('invisible');
         renderListOfCountries(data);
       } else {
-        showWarning(WARN_TOO_MANY_COUNTRIES);
+        clearOutput();
+        console.log(data);
+
+        show.warning(
+          `Too many matches found (${data.length}). Please enter a more specific name.`
+        );
+        return;
       }
+      show.default();
     })
-    .catch(error => showError(error.message));
+    .catch(error => {
+      console.log('error: ', error.message);
+      if (/aborted a request.$/.test(error.message)) {
+        return;
+      }
+
+      clearOutput();
+      show.error(error.message);
+    });
 }
 
 function renderCountry({ name, flag, population, capital, languages }) {
-  refs.countryInfo.classList.remove('invisible');
-
-  refs.countryInfo.insertAdjacentHTML(
-    'beforeend',
-    `<h1>${flag} ${getName(name)}</h1>
+  refs.countryInfo.innerHTML = `<h1>${flag} ${getName(name)}</h1>
       <table>
         ${getOfficialNameMarkup(name)}
         <tr><th>Capital:</th><td>${capital[0]}</td></tr>
         <tr><th>Population:</th><td>${transformNumber(population)}</td></tr>
         <tr><th>Languages:</th><td>${transformLang(languages)}</td></tr>
-      </table>`
-  );
+      </table>`;
+  showCountryCard();
 }
 
 function renderListOfCountries(list) {
-  refs.countries.classList.remove('invisible');
-
   //flag & official name only
-  refs.countries.insertAdjacentHTML(
-    'beforeend',
-    list.map(({ name, flag }) => `<li>${flag} ${getName(name)}</li>`).join('')
-  );
+  refs.countries.innerHTML = list
+    .map(({ name, flag }) => `<li>${flag} ${getName(name)}</li>`)
+    .join('');
+  showCountryList();
 }
 
 //clear output from previous data
 function clearOutput() {
-  refs.countries.classList.add('invisible');
+  hideCountryCard();
+  hideCountryList();
+}
+
+function hideCountryCard() {
   refs.countryInfo.classList.add('invisible');
-  refs.countries.innerHTML = '';
-  refs.countryInfo.innerHTML = '';
+}
+
+function hideCountryList() {
+  refs.countries.classList.add('invisible');
+}
+
+function showCountryCard() {
+  refs.countryInfo.classList.remove('invisible');
+}
+
+function showCountryList() {
+  refs.countries.classList.remove('invisible');
 }
 
 function transformNumber(num) {
@@ -121,32 +173,20 @@ function getOfficialNameMarkup(name) {
     : '<tr><th>Official name:</th><td>' + name.official + '</td></tr';
 }
 
-function handleInputClick(e) {
-  if (!e.altKey) {
+function handleKeyDown(e) {
+  if (!e.altKey || !e.shiftKey) {
     return;
   }
   e.preventDefault();
-  CONF.useCommon = !CONF.useCommon;
-  informOfUseCommon(CONF.useCommon ? USE_OFFICIAL : USE_COMMON);
+
+  //console.log(e.code);
+  if (e.code === 'KeyN') {
+    CONF.useCommon = !CONF.useCommon;
+  } else if (e.code === 'KeyF') {
+    CONF.filterStrict = !CONF.filterStrict;
+  }
+
+  show.setDefault(CONF.getInfoStr());
   processInput(refs.input.value);
 }
-
-/* ************************* NOTIFICATIONS ********************************** */
-
-function showError(txt) {
-  Notify.failure(txt, { position: 'center-bottom' });
-}
-
-function showWarning(txt) {
-  Notify.warning(txt, { position: 'center-bottom' });
-}
-
-function informOfUseCommon(txt) {
-  Notify.info(txt, {
-    position: 'center-bottom',
-    closeButton: true,
-    showOnlyTheLastOne: true,
-  });
-}
-
 
