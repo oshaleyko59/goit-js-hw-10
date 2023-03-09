@@ -1,75 +1,55 @@
+/***************************** REQUIREMENTS ****************************
+* Створи фронтенд частину програми пошуку даних про країну за її частковою
+  або повною назвою
+
+* function fetchCountries() shall be imported from  fetchCountries.js
+* HTTP-запити виконуються на події input. Use lodash.debounce with 300 ms delay
+* INTERFACE
+  + if response > 10 - show warning notiflix
+  + if response = 2 - render list(only flag and name official)
+  + if response = 1 - render country card (flag, name official, capital, population and languages)
+
+  УВАГА - ОБЛАМАЛАСЯ ... там мабуть RegExp потрібній, а в доку нічого не написано)))
+Достатньо, щоб застосунок працював для більшості країн. Деякі країни,
+як-от Sudan, можуть створювати проблеми, оскільки назва країни є
+частиною назви іншої країни - South Sudan. Не потрібно турбуватися
+про ці винятки.
+  */
+
 import './css/styles.css';
 
 import debounce from 'lodash.debounce';
-
-//function fetchCountries() shall be imported from  fetchCountries.js
 import { fetchCountries } from './js/fetchCountries';
+
 import * as show from './js/notifications';
-
-/******
-Створи фронтенд частину програми пошуку даних про країну за її частковою
-або повною назвою */
-
-const DEBOUNCE_DELAY = 30; //Too fast actually...
-const MAX_NUMBER_COUNTRIES = 10;
-
-// configuration object for modification of output appearance
-const CONF = {
-  useCommon: false, //use common name for a header if true, official name by default
-  filterStrict: false, //if true, fetched data will be filtered out if not start from entered letters
-  getInfoStr() {
-  return `ALT+SHIFT-F - toggle filter, ALT+SHIFT-N - toggle name. Name option: ${
-    CONF.useCommon ? 'COMMON' : 'OFFICIAL'
-  } Filter option: ${CONF.filterStrict ? 'YES' : 'NO'}`;
-}
-};
-
-/* INTERFACE
-+ if response > 10 - show warning notiflix
-+ if response = 2 - render list(only flag and name official)
-+ if response = 1 - render country card (flag, name official, capital, population and languages)
-*/
+import { CONF} from './js/config';
 
 const refs = {
-  // input#search-box for kbd input
   input: document.querySelector('#search-box'),
   countries: document.querySelector('.country-list'),
   countryInfo: document.querySelector('.country-info'),
 };
 
-refs.input.placeholder = 'Please input country name here';
+refs.input.placeholder = CONF.PLACEHOLDER;
 refs.countries.classList.add('invisible');
 refs.countryInfo.classList.add('invisible');
-// HTTP-запити виконуються на події input
-refs.input.addEventListener(
-  'input',
-  // use lodash.debounce with 300 ms delay
-  debounce(e => processInput(e.target.value), DEBOUNCE_DELAY)
+
+refs.input.addEventListener('input',
+  debounce(e => processInput(e.target.value), CONF.DEBOUNCE_DELAY)
 );
 
-/* to toggle appearance:
-  ALT-N - name.common vs name.official
-  ALT-F - toggle no filter vs filter
-    Filter out if fetched name(any) does not start with entered sequenc
- */
 document.addEventListener('keydown', handleKeyDown);
 show.init();
 show.setDefault(CONF.getInfoStr());
-/*   `ALT+SHIFT-F - toggle filter, ALT+SHIFT-N - toggle name. Name option: ${
-    CONF.useCommon ? 'COMMON' : 'OFFICIAL'
-  } Filter option: ${CONF.filterStrict ? 'YES' : 'NO'}`
-); */
 show.default();
-processInput('grou');
 //************************* end of sync code *********************
-
-/* ************************* FUNCTIONS ********************************** */
 
 function processInput(name) {
   name = name.trim().toLowerCase();
   if (name === '') {
     refs.input.value = '';
-    refs.input.placeholder = 'Please enter country name';
+    refs.input.placeholder = CONF.PLACEHOLDER;
+    clearOutput();
     show.default();
     return;
   }
@@ -84,17 +64,14 @@ function processInput(name) {
         );
       }
       if (data.length === 1) {
-        console.log(data[0]);
         refs.countries.classList.add('invisible');
 
         renderCountry(data[0]);
-      } else if (data.length <= MAX_NUMBER_COUNTRIES) {
-        console.log(data);
+      } else if (data.length <= CONF.MAX_NUMBER_COUNTRIES) {
         refs.countryInfo.classList.add('invisible');
         renderListOfCountries(data);
       } else {
         clearOutput();
-        console.log(data);
 
         show.warning(
           `Too many matches found (${data.length}). Please enter a more specific name.`
@@ -104,8 +81,7 @@ function processInput(name) {
       show.default();
     })
     .catch(error => {
-      console.log('error: ', error.message);
-      if (/aborted a request.$/.test(error.message)) {
+      if (/aborted a request.$/.test(error.message)) { //not display aborted
         return;
       }
 
@@ -114,13 +90,20 @@ function processInput(name) {
     });
 }
 
-function renderCountry({ name, flag, population, capital, languages }) {
-  refs.countryInfo.innerHTML = `<h1>${flag} ${getName(name)}</h1>
+function getFlagMarkup(flags, height) {
+  return `<img src='${flags.svg}' height=${height}rem width=auto
+  } alt='Flag'/>`;
+}
+
+function renderCountry({ name, flags, population, capital, languages }) {
+  refs.countryInfo.innerHTML = `<h1>${getFlagMarkup(flags, 43)} ${CONF.getName(
+    name
+  )}</h1>
       <table>
-        ${getOfficialNameMarkup(name)}
+        ${CONF.getOfficialNameMarkup(name)}
         <tr><th>Capital:</th><td>${capital[0]}</td></tr>
-        <tr><th>Population:</th><td>${transformNumber(population)}</td></tr>
-        <tr><th>Languages:</th><td>${transformLang(languages)}</td></tr>
+        <tr><th>Population:</th><td>${CONF.transformPopulation(population)}</td></tr>
+        <tr><th>Languages:</th><td>${CONF.transformLang(languages)}</td></tr>
       </table>`;
   showCountryCard();
 }
@@ -128,7 +111,12 @@ function renderCountry({ name, flag, population, capital, languages }) {
 function renderListOfCountries(list) {
   //flag & official name only
   refs.countries.innerHTML = list
-    .map(({ name, flag }) => `<li>${flag} ${getName(name)}</li>`)
+    .map(
+      ({ name, flags }) =>
+        `<li class='country-list__item'>
+        <span class='country-list__flag'>${getFlagMarkup(flags, 30)}</span>
+        <span class='country-list__name'>${CONF.getName(name)}</span></li>`
+    )
     .join('');
   showCountryList();
 }
@@ -155,31 +143,12 @@ function showCountryList() {
   refs.countries.classList.remove('invisible');
 }
 
-function transformNumber(num) {
-  return num.toLocaleString();
-}
-
-function transformLang(obj) {
-  return Object.values(obj).join(', ');
-}
-
-function getName(name) {
-  return CONF.useCommon ? name.common : name.official;
-}
-
-function getOfficialNameMarkup(name) {
-  return !CONF.useCommon
-    ? ''
-    : '<tr><th>Official name:</th><td>' + name.official + '</td></tr';
-}
-
 function handleKeyDown(e) {
   if (!e.altKey || !e.shiftKey) {
     return;
   }
   e.preventDefault();
 
-  //console.log(e.code);
   if (e.code === 'KeyN') {
     CONF.useCommon = !CONF.useCommon;
   } else if (e.code === 'KeyF') {
